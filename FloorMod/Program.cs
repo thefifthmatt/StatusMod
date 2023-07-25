@@ -170,9 +170,9 @@ namespace StatusMod
 
             int neutral = 5020;
 
-            // 4066: dummy speffect to copy to 4067 for player in floor mode
-            if (!isElden)
+            if (isSekiro)
             {
+                // 4066: dummy speffect to copy to 4067 for player in floor mode, and avoid copying for other c0000s
                 PARAM.Row dummySp = copySpEffect(neutral, 4066, "trigger");
                 dummySp["effectEndurance"].Value = 0f;
             }
@@ -220,17 +220,59 @@ namespace StatusMod
                 buildupSp["effectEndurance"].Value = duration;
 
                 // Installation on 100620 (right) 100621 (left). Some other mods use this, so they won't be compatible.
-                param["SpEffectParam"][100620][cycle].Value = 4067;
-                param["SpEffectParam"][100621][cycle].Value = 4067;
+                // Uninstall it here.
+                int exist = (int)param["SpEffectParam"][100620][cycle].Value;
+                if (exist == 4066 || exist == 4067)
+                {
+                    param["SpEffectParam"][100620][cycle].Value = -1;
+                    param["SpEffectParam"][100621][cycle].Value = -1;
+                }
+
+                // Finally dummy->actual transfer, for player
+                EMEVD emevd = EMEVD.Read($@"{inDir}\event\common.emevd.dcx");
+                int dummyEvent = 11215185;
+                int[] events = { dummyEvent };
+                EMEVD.Event constr = emevd.Events.Find(e => e.ID == 0);
+                if (constr == null)
+                {
+                    throw new Exception("commond.emevd.dcx missing constructor???");
+                }
+                constr.Instructions.RemoveAll(instr =>
+                {
+                    if (instr.ID == 2000 && instr.Bank == 0)
+                    {
+                        List<object> args = instr.UnpackArgs(Enumerable.Repeat(EMEVD.Instruction.ArgType.Int32, instr.ArgData.Length / 4));
+                        if (args.Count >= 2 && events.Contains((int)args[1]))
+                        {
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+                emevd.Events.RemoveAll(e => events.Contains((int)e.ID));
+
+                constr.Instructions.Add(new EMEVD.Instruction(2000, 0, new List<object> { 0, dummyEvent, 0 }));
+                EMEVD.Event newEvent = new EMEVD.Event(dummyEvent);
+                newEvent.Instructions.AddRange(new List<EMEVD.Instruction>
+                {
+                    new EMEVD.Instruction(2004, 8, new List<object> { 10000, 4067 }),
+                    new EMEVD.Instruction(1001, 1, new List<object> { 1 }),
+                    new EMEVD.Instruction(1000, 4, new List<object> { (byte)1 }),
+                });
+                emevd.Events.Add(newEvent);
 
                 DCX.Type overrideDcx = DCX.Type.DCX_DFLT_11000_44_9;
                 if (outDir == ".")
                 {
                     SFUtil.Backup($@"{outDir}\regulation.bin");
+                    SFUtil.Backup($@"{outDir}\event\common.emevd.dcx");
                 }
                 string path = new FileInfo($@"{outDir}\regulation.bin").FullName;
                 Console.WriteLine($"Writing parameters to {path}");
                 game.OverrideBndRel($@"{inDir}\regulation.bin", path, param.Inner, f => f.AppliedParamdef == null ? null : f.Write(), dcx: overrideDcx);
+                path = new FileInfo($@"{outDir}\event\common.emevd.dcx").FullName;
+                Console.WriteLine($"Writing event script to {path}");
+                emevd.Write(path, overrideDcx);
             }
             else
             {
@@ -419,10 +461,10 @@ namespace StatusMod
                         newEvent.Instructions.Add(new EMEVD.Instruction(1003, 2, new List<object> { (byte)1, (byte)0, (byte)0, 6300 }));
                     }
                     newEvent.Instructions.AddRange(new List<EMEVD.Instruction>
-                {
-                    new EMEVD.Instruction(2004, 8, new List<object> { 10000, 4067 }),
-                    new EMEVD.Instruction(1000, 4, new List<object> { (byte)1 }),
-                });
+                    {
+                        new EMEVD.Instruction(2004, 8, new List<object> { 10000, 4067 }),
+                        new EMEVD.Instruction(1000, 4, new List<object> { (byte)1 }),
+                    });
                     emevd.Events.Add(newEvent);
 
                     // Partial health start. Can't figure out how this works so just counteract it.
