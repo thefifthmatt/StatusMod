@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace FloorMod.Properties {
+namespace StatusMod.Properties {
     using System;
     
     
